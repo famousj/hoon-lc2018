@@ -86,7 +86,7 @@ You have to be ruthless in your pursuit of simplicity.  You have to make hard an
 
 This way, once you do tackle this bit of functionality, you'll have the most options available to you.
 
-This is a solution to the (Law of Leaky Abstractions)[https://www.joelonsoftware.com/2002/11/11/the-law-of-leaky-abstractions/]:
+This is a solution to the (Law of Leaky Abstractions)[https://www.joelonsoftware.com/2002/11/11/the-law-of-leaky-abstractions/] :
 
 > If there's no functionality to abstract away, there's nothing to leak.
 
