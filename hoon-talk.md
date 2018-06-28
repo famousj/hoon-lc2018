@@ -1,6 +1,6 @@
 # Hoon and You - An FP Perspective
 
-[//]: # (Version 28K)
+[//]: # (Version 27K)
 
 ## Introduction
 
@@ -774,7 +774,7 @@ On line 2, we cast the results of everything that follows to a list of unsigned 
 This does a few things:
 
 1. It documents exactly what we're trying to do here.  
-2. If this isn't giving us the type we think it should, we'll get a type error, a `nest-fail`, right there at line 5, rather than somewhere else in the app.
+2. If this isn't giving us the type we think it should, we'll get a type error, a `nest-fail`, right there at line 2, rather than somewhere else in the app.
 
 This applies to pretty much any language.  Just because the compiler will infer what you're doing, unless you're doing something explicitly generic, it won't kill you to type out what you're expecting and can save you some trouble.
 
