@@ -1,10 +1,10 @@
 # Hoon and You - An FP Perspective
 
-[//]: # (Version 27K)
+[//]: # (Version 26K)
 
 ## Introduction
 
-_Delivered as a talk, LambdaConf 2018_
+_Delivered as a talk, [LambdaConf 2018](https://lambdaconf2018.lambdaconf.us/en/program-schedule/program/37/hoon-and-you-a-functional-programming-perspective)_
 
 This article is about the programming language Hoon, its philosophical and technological underpinnings.
 
