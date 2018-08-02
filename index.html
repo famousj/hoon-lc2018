@@ -1,0 +1,552 @@
+<h1 id="hoon-and-you---an-fp-perspective">Hoon and You - An FP Perspective</h1>
+<h2 id="introduction">Introduction</h2>
+<p><em>Delivered as a talk, <a href="https://lambdaconf2018.lambdaconf.us/en/program-schedule/program/37/hoon-and-you-a-functional-programming-perspective">LambdaConf 2018</a></em></p>
+<p>This article is about the programming language Hoon, its philosophical and technological underpinnings.</p>
+<p>When you finish reading this, you will probably not be able to do anything in Hoon that you didn’t already walk in here knowing.</p>
+<p>But Hoon is completely unlike any other functional programming language you might know, and so we can use it to take a look at familiar concepts from a completely different angle. Things like types.</p>
+<p>Along the way, we’ll look at programming language design and what kinds of tradeoffs go into it.</p>
+<p>There are a lot of really smart and talented people involved in this project. I am not one of them. But I’ve had to dumb down the material to the point that I was able to understand it, and hopefully you’ll be able to profit from that effort.</p>
+<p>So, let’s get to it, by first talking about what Hoon is for.</p>
+<h2 id="the-telos-of-hoon">The <em>Telos</em> of Hoon</h2>
+<p>Much as C was developed to write Unix, Hoon was developed to write Urbit. So we should first mention in passing what this Urbit thing is.</p>
+<p>Urbit is the somewhat ambitious project of condemning all computing as we know it to complete obsolescence. It’s a clean-slate system software stack, which includes the following:</p>
+<ul>
+<li>OS</li>
+<li>networking</li>
+<li>security</li>
+<li>typed file system with built-in version control</li>
+<li>identity management</li>
+<li>addressing</li>
+<li>several dozen other things</li>
+</ul>
+<p>And when I say “clean-slate”, the operating metaphor has been to imagine they find a spaceship from Mars crash-landed outside of Bozeman, MT. What kind of software would they be running? (Spoiler: probably not Windows ME.)</p>
+<p>There’s not a single assumption about how computer systems should work that has not been revisited.</p>
+<p>If you stop occasionally and ask, “Why did they do it that way?”, it’s a very rewarding project to study. Although this can lead you into a rabbit hole.</p>
+<h2 id="kelvin-versioning">Kelvin Versioning</h2>
+<p>For instance, they use something called “Kelvin versioning”. Instead of versions increasing, they decrease, toward zero. They use this for Hoon as well as Nock, the lowest level language, which we’ll discuss shortly.</p>
+<p>Why is this? Why not just increment versions like everyone else does?</p>
+<p>The answer is, because software improvement is usually considered an additive process. Version 2.0 does more stuff than version 1.0, version 2.1 is a lot like version 2.0, except it works better. We can assume there will be a version 3.0 sometime in the future which will work differently in some fundamental way, hopefully better but often not.</p>
+<p>Usually this is sensible. We launch software in an environment of uncertainty.</p>
+<p>As time goes on, we understand the problem space better, our users gain some sophistication, technology changes, so we refine the software to match our better understanding.</p>
+<p>Or sometimes decisions come straight from marketing.</p>
+<blockquote>
+<p><em>CloudTron v4</em> - Now with Blockchain! - Add a rich, smoky bacon scent to all your cloud-stored files.</p>
+</blockquote>
+<h2 id="json">JSON</h2>
+<p>But why do we assume that progress means change?</p>
+<p>Take JSON. JSON is designed for packaging data as text to send between clients and servers. And by design, it has barely changed since the moment it came out.</p>
+<p>I can imagine my great-grandchildren using JSON that looks exactly like the JSON I use. Which means, if I need to send out data from a server I’m writing, if I use JSON, whatever else I might have to change or update or fix, the actual format the data goes out in will not change at all.</p>
+<p>So maybe I might want to do things differently. Personally, I’d allow an optional trailing comma at the end of arrays.</p>
+<p>But any minor improvements you might now make to JSON have to be weighed against the immense convenience of having this entire part of your code that never has to change.</p>
+<p>Whatever else you might need in CloudTron v.5, it won’t need to support a new version of JSON.</p>
+<p>And that’s just the problem of formatting data as text.</p>
+<p>Now imagine the language, the libraries, the network stack, the entire OS never changes. Imagine never being in dependency hell because everything you’re working with is effectively “done” except this app you just had an idea for.</p>
+<p>So to pull ourselves out of this rabbit-hole, maybe sometimes the ideal solution to a problem is software that <em>stops</em> changing. You define its scope as something achievable, and “progress” means decreasing the number of things that have to change, because everything else is working like it’s supposed to.</p>
+<p>In other words, it’s being frozen. Hence, Kelvin versioning. We assume some Platonic ideal solution, set that version to 0K, and our versions are getting ever closer this ideal.</p>
+<h3 id="simplicity">Simplicity</h3>
+<p>To make a software system that can be frozen, it has to be simple.</p>
+<p>You have to be ruthless in your pursuit of simplicity. You have to make hard and fast choices about what is or isn’t in scope. If it’s not in scope, do the absolute minimum you can with it.</p>
+<p>This way, once you do tackle this bit of functionality, you’ll have the most options available to you.</p>
+<p>This is a solution to the <a href="https://www.joelonsoftware.com/2002/11/11/the-law-of-leaky-abstractions/">Law of Leaky Abstractions</a>:</p>
+<blockquote>
+<p>If there’s no functionality to abstract away, there’s nothing to leak.</p>
+</blockquote>
+<p>Ultimately, you can build something simple from something else that’s simple. You cannot build something simple from something complex.</p>
+<p>The best you can hope for is to find a way to shift some of the complexity away from some users, at the cost of making things vastly more complicated for other users.</p>
+<p>Maybe you’ll end up with a simple, elegant front-end and a nightmarish back-end. Or vice versa.</p>
+<h3 id="nock">Nock</h3>
+<p>So what is the simplest basis for a computing system that can be frozen?</p>
+<p>The Urbit answer for this is Nock. Here’ is Nock 4K. Functional assembly language:</p>
+<pre><code>A noun is an atom or a cell.  An atom is a natural number.  A cell is an ordered pair of nouns.
+
+nock(a)             *a
+[a b c]             [a [b c]]
+
+?[a b]              0
+?a                  1
++[a b]              +[a b]
++a                  1 + a
+=[a a]              0
+=[a b]              1
+=a                  =a
+
+/[1 a]              a
+/[2 a b]            a
+/[3 a b]            b
+/[(a + a) b]        /[2 /[a b]]
+/[(a + a + 1) b]    /[3 /[a b]]
+/a                  /a
+
+#[1 a b]            a
+#[(a + a) b c]      #[a [b /[(a + a + 1) c]] c]
+#[(a + a + 1) b c]  #[a [/[(a + a) c] b] c]
+#a                  #a
+
+*[a [b c] d]        [*[a b c] *[a d]]
+
+*[a 0 b]            /[b a]
+*[a 1 b]            b
+*[a 2 b c]          *[*[a b] *[a c]]
+*[a 3 b]            ?*[a b]
+*[a 4 b]            +*[a b]
+*[a 5 b]            =*[a b]
+
+*[a 6 b c d]        *[a 2 [0 1] 2 [1 c d] [1 0] 2 [1 2 3] [1 0] 4 4 b]
+*[a 7 b c]          *[a 2 b 1 c]
+*[a 8 b c]          *[a 7 [[7 [0 1] b] 0 1] c]
+*[a 9 b c]          *[a 7 c 2 [0 1] 0 b]
+*[a 10 [b c] d]     *[a 8 c 7 [0 3] d]
+*[a 10 b c]         *[a c]
+*[a 12 [b c] d]     #[b *[a c] *[a d]]
+
+*a                  *a</code></pre>
+<p>It is very, very simple.</p>
+<p>The data model is:</p>
+<pre><code>A noun is an atom or a cell.  An atom is any natural number.
+A cell is any ordered pair of nouns.</code></pre>
+<p>Basically a noun is a binary tree whose leaves are numbers, unsigned integers of arbitrary length. Someone described the noun as an “S-Expression without the S”, since Nock takes no interest in what the atom is.</p>
+<pre><code>nock(a)             *a</code></pre>
+<p>This line notes that nock is a function, which makes sense, this being functional assembly language and all.</p>
+<p>The primary instructions:</p>
+<pre><code>*[a 0 b]            /[b a]
+*[a 1 b]            b
+*[a 2 b c]          *[*[a b] *[a c]]
+*[a 3 b]            ?*[a b]
+*[a 4 b]            +*[a b]
+*[a 5 b]            =*[a b]</code></pre>
+<p>We have our instructions for comparing two values, determining if a noun is a cell or just an atom, binary tree addressing, making a constant.</p>
+<p>Since it’s homoiconic, so there’s an <code>apply</code> instruction.</p>
+<p>And there’s one – count ’em! – math instruction, increment.</p>
+<p>Now, as anyone who’s read <em>The Little Schemer</em> can verify, all arithmetic can ultimately be derived from the increment operation. It will be slow as hell, especially once you start doing division or matrix arithmetic, but it’s possible.</p>
+<p>Here’s how to decrement in Nock:</p>
+<pre><code>[8 [1 0] 8 [1 6 [5 [0 7] 4 0 6] [0 6] 9 2 [0 2] [4 0 6] 0 7] 9 2 0 1]</code></pre>
+<p>By having one math operation in Nock, we have explicitly taken speed and performance out of scope. This has to be solved at some point, but we’re accepting it’s not going to be solved here.</p>
+<pre><code>*[a 6 b c d]        *[a 2 [0 1] 2 [1 c d] [1 0] 2 [1 2 3] [1 0] 4 4 b]
+*[a 7 b c]          *[a 2 b 1 c]
+*[a 8 b c]          *[a 7 [[7 [0 1] b] 0 1] c]
+*[a 9 b c]          *[a 7 c 2 [0 1] 0 b]
+*[a 10 [b c] d]     *[a 8 c 7 [0 3] d]
+*[a 10 b c]         *[a c]
+*[a 12 [b c] d]     #[b *[a c] *[a d]]
+</code></pre>
+<p>Instructions 6 through 12 are macros. We have our instructions for function composition, if-then-else, and editing a noun.</p>
+<p>And that’s it. Those are all the instructions. And much like building all of math from increment, we build all of computing from these operations.</p>
+<p>There is some overlap with Lambda Calculus in its most stripped-down form, but this is not Lambda Calculus.</p>
+<h3 id="nock-tradeoffs">Nock Tradeoffs</h3>
+<p>Nock is not the simplest basis for computing. If it were, it wouldn’t have macros, for starters. It’s striving for the simplest basis of computing that is actually useful.</p>
+<p>We want macros, because we know we’re going to have to do if-then-else, and it helps immensely if we know, at a glance, that this is what we’re looking at, rather than having to infer it from a pile of comparisons and nested <code>apply</code> statements.</p>
+<p>The only primitive data type is an unsigned integer. Nock will treat all values like placeholders. What they <em>mean</em> will be handled in Hoon.</p>
+<p>The only data structure is a binary tree. This is not the simplest data structure you could pick. Brainf*ck uses a single array, which I would argue is way simpler. But if you’re shooting for maximal power with minimal complexity, you really can’t do better than a binary tree.</p>
+<p>On top of those, here’s what else Nock does not have:</p>
+<ul>
+<li>Variables</li>
+<li>Functions</li>
+<li>An environment</li>
+<li>A syntax</li>
+<li>Error handling of any kind</li>
+</ul>
+<h2 id="hoon">Hoon</h2>
+<p>Okay, with that background, we are finally in a position to look at Hoon.</p>
+<p>Hoon is the higher-level language of Urbit. It is statically typed and compiles down to Nock, which is then interpreted.</p>
+<p>Hoon is intended to be a systems language. It’s designed to be good at compiling, running, and reloading programs at runtime.</p>
+<p>It can hot-reload an app, a kernel module, or the whole OS just by running a function on an incoming packet.</p>
+<p>The compiler for Hoon is written in Hoon. Please don’t ask how this is possible.</p>
+<p>It also uses Kelvin versioning. Its version is 143 and it’s still in active development, but it is intended to be frozen.</p>
+<p>So, like Hoon, it strives for simplicity, in its relationship to Nock, in what the compiler is doing, and in its semantics.</p>
+<h3 id="hoons-terrifying-syntax">Hoon’s Terrifying Syntax</h3>
+<p>Hoon programs are composed of <code>hoon</code>s, which are abstract syntax trees.</p>
+<p>Hoon expressions begin with a rune, which is a pair of ASCII characters, like <code>|=</code>. The runes are followed by one or more sub-expressions, which might be (and often are) Hoons themselves.</p>
+<p>Given the ASCII-heavy nature of Hoon, there’s a handy set of nicknames for each ASCII character you might use.</p>
+<pre><code>ace [1 space]   gal &lt;               pal (
+bar |           gap [&gt;1 space, nl]  par )
+bas \           gar &gt;               sel [
+buc $           hax #               sem ;
+cab _           hep -               ser ]
+cen %           kel {               sig ~
+col :           ker }               soq &#39;
+com ,           ket ^               tar *
+doq &quot;           lus +               tec `
+dot .           pam &amp;               tis =
+fas /           pat @               wut ?
+zap !</code></pre>
+<p>It’s not entirely necessary to memorize this, but it will make it more likely your dreams will come true.</p>
+<p>Using these runes, you can actually speak Hoon code out loud.</p>
+<h3 id="demo-app">Demo App</h3>
+<p>So, here’s my favorite “Introduction to FP” example program, which takes some number <code>n</code> and prints the first <code>n</code> numbers in the Fibonacci sequence.</p>
+<pre><code>|=  n/@ud                       :: 1
+^-  (list @ud)                  :: 2
+=/  a  0                        :: 3
+=/  b  1                        :: 4
+|-                              :: 5
+:-                              :: 6
+  a                             :: 7
+?:  =(0 n)                      :: 8
+  ~                             :: 9
+$(n (dec n), a b, b (add a b))  :: 10</code></pre>
+<p>First we create a “gate”, which is approximately a function (line 1).</p>
+<p>Line 2 casts the results to a list of unsigned decimals.</p>
+<p>We define a couple of variables (line 3, 4).</p>
+<p>Line 5 sets our recursion point (more or less).</p>
+<p>On line 6, <code>:-</code> or <code>colhep</code> means we’re doing a <code>cons</code> to create a cell. The head of our cell, on line 7, is <code>a</code>.</p>
+<p>If our <code>n</code> is zero (line 8), we append a null to the list (line 9). The tilde, or <code>sig</code> is the null value in Hoon.</p>
+<p>Otherwise, we recurse with updated values (line 10).</p>
+<p><code>n</code> is decremented, <code>a</code> is set to <code>b</code>, and <code>b</code> is the sum of the previous <code>a</code> and <code>b</code>.</p>
+<p>(Actually, the director’s cut description of what’s going on here is that line 4 creates a function named <code>$</code> (i.e. an anonymous function), whose contents are the rest of this program. This function also gets called immediately.</p>
+<p>Then on line 10, we call this function again, giving it a list of all the changes we’ve made.)</p>
+<h3 id="hoons">Hoons</h3>
+<p>Each rune in Hoon is expecting certain sub-expressions. Hoon eschews Lisp-style enclosing parentheses, so your code is mercifully free of terminator piles, like <code>)))))))))</code>.</p>
+<p>The tradeoff here is that you have to know what sub-expressions the compiler will be expecting, and you have to know where one Hoon ends and another one begins.</p>
+<p>You can generally clarify things through good use of style and indentation.</p>
+<p>As an example, if you need to create a cell, you use the <code>:-</code> rune. This is formally defined as:</p>
+<pre><code>{%clhp p=hoon q=hoon}</code></pre>
+<p>The <code>hoon</code>s in this definition, <code>p</code> and <code>q</code>, can be another value or the result of another Hoon. If you’re making a cell of two values, you would write:</p>
+<pre><code>:-  42  420</code></pre>
+<p>Or these <code>hoon</code>s could be more complicated than that. In the case of our sample app, we <code>cons</code> the next Fibonacci number with the results of our <code>if</code> rune, (i.e. <code>?:</code> or <code>buccol</code>).</p>
+<pre><code>:-                              :: 6
+  a                             :: 7
+?:  =(0 n)                      :: 8
+  ~                             :: 9
+$(n (dec n), a b, b (add a b))  :: 10</code></pre>
+<p>Other runes are usually used differently. One way to “declare a variable” is to use the <code>=/</code> or <code>tisfas</code> rune.</p>
+<p>In our sample app, we see this one used as:</p>
+<pre><code>=/  a  0                        :: 3 
+=/  b  1                        :: 4
+|-                              :: 5 
+...</code></pre>
+<p>This rune is defined as:</p>
+<pre><code>{$tsfs p/toro q/hoon r/hoon}</code></pre>
+<p>(The type for <code>p</code> is <code>toro</code>, which is defined as a label and an optional type.)</p>
+<p>In our app on line 2, the <code>p</code> is <code>a</code>, our variable name. <code>q</code> is the value we’re setting it to, i.e. zero.</p>
+<p>And what’s <code>r</code>? <code>r</code>, in this case, is the rest of the program.</p>
+<p>You’ll find that many runes are defined so that the last argument can be the rest of the program, such as the rune to cast to a type, <code>^-</code>, or to restrict the Hoon version, <code>!?</code>.</p>
+<p>These sorts of runes help give Hoon a procedural feel. In practice, Hoon is 100% a functional language, but you can lay your code out so that it reads like a sequence of actions.</p>
+<p>Maybe it’s because I spent some of my crucial formative years doing turtle graphics, but this maps well to how my brain works.</p>
+<p>Well-styled Hoon should flow this way. If you have an if statement, <code>?:</code>, and you find that most of the “meat” happens when the test is <code>true</code>, use the inverted test, <code>?.</code>, so the <code>true</code> clause happens last.</p>
+<p>I think of style as “soft syntax”. It’s syntax that doesn’t have to be formalized to the point that something as stupid as a compiler can handle it. It’s syntax you can ignore if you have a good reason. And you can change style without having to push out a new version.</p>
+<h3 id="the-subject">The Subject</h3>
+<p>Every operation is evaluated against one operand, the <code>subject</code>. It will return one result, the <code>product</code>.</p>
+<p>There’s no “environment” or “scope”. There’s no symbol table. Just the subject.</p>
+<p>The subject, by default, contains the standard libraries, info about the ship we’re running this on. But we can always add things to the subject, and explicitly choose a limited subset of the subject to work with.</p>
+<h3 id="digression-1---language-tradeoffs">Digression #1 - Language Tradeoffs</h3>
+<p>I described the syntax for Hoon as “terrifying”, and I’m sticking with it. I think most Hoon developers would agree.</p>
+<p>Syntax here means, what do you have to type out to do the thing you’re trying to do? How wordy and complicated is it?</p>
+<p>This is in contrast with semantics which means, what do the things you’re typing out mean? Conceptually, how easily can this fit into your head?</p>
+<p>Another way to look at it is that syntax is the front-end, the thing the developer types in. Semantics is the back-end, what the machine is capable of doing with it?</p>
+<p>In any language, there’s a tension between syntax and semantics.</p>
+<p>Some poorly designed languages can have complicated syntax and complicated semantics, but at some point, simplifying the one will come at the expense of making the other more complicated.</p>
+<p>A good example of this is static types vs. dynamic types.</p>
+<p>Dynamic types simplify the syntax for the simple reason that you don’t have to specify a type. Something like this is perfectly valid in JavaScript:</p>
+<pre><code>thing = 23
+thing = &quot;changed my mind&quot;
+thing = 12.3</code></pre>
+<p>This comes at the expense of not exactly knowing what <code>thing</code> is. If I start using it in some other part of the code, what value is it going to have? Can I append a string to it? What’s that going to look like?</p>
+<p>I’m picking on JavaScript because it’s a <a href="https://www.destroyallsoftware.com/talks/wat">notorious semantic dumpster fire</a>. This is because the interpreter will accept pretty much anything as valid syntax, even things that don’t make any sense semantically.</p>
+<p>Nock has very simple syntax and very simple semantics. There’s nothing that’s a big secret going on here. The problem is that, by itself, it’s of extremely limited utility. You don’t have to sweat how type inference works in Nock because Nock has no types.</p>
+<p>Which brings up the third point. Expressiveness. What concepts do the language make possible? How easy is it to put these ideas into code?</p>
+<p>So I’ve made a handy diagram to condense this idea. This is the most important diagram in this article. I present:</p>
+<h2 id="leblancs-triangle">LeBlanc’s Triangle</h2>
+<figure>
+<img src="leblancs-triangle.png" alt="LeBlanc’s Triangle" /><figcaption>LeBlanc’s Triangle</figcaption>
+</figure>
+<p>Please note: this idea is not particularly original. What is original is making it into a triangle shape and naming it after myself.</p>
+<p>When you give something a triangle shape, you’re saying, “Pick any two”.</p>
+<p>Hoon has very complicated syntax but the semantics are actually fairly straightforward. There’s no magic happening inside the compiler. If you understand the code, you pretty much understand what the compiler is doing.</p>
+<p>However, even though the semantics are simple, they’re chosen in such a way that you can express some really powerful ideas with them.</p>
+<h2 id="types">Types</h2>
+<p>I would dearly love to run you through all the ins and outs of Hoon, but they gave me 50 minutes for a talk, and the above content used up a ton of them.</p>
+<p>So for the remainder, I’d like to drill a bit into types and how they work in Hoon.</p>
+<p>Hoon is a strongly-typed language, but its type system works completely differently, and way more simply, than most other strongly-typed languages.</p>
+<p>Hopefully you can get a flavor of how close we can get to the fully-armed and operational bidirectional type inference system which Hindley-Milner makes possible, only with 1/1000th the complexity.</p>
+<h3 id="molds">Molds</h3>
+<p>So, let’s talk about what a type actually is. A type is a set of values which conforms to some kind of semantic criteria. It could have infinitely many possible values or it could have zero possible values. Or one possible value.</p>
+<p>(Side note: what’s the difference between a type with one value and a constant? A: There isn’t any.)</p>
+<p>Conveniently enough, this definition is really close to the definition of a function. A function takes as input some domain, does stuff, and its output is some other domain, the range. All functional languages work like this, and Hoon is a functional language.</p>
+<p>So for a minimalist type system, all you really need is the humble function. You could take as the domain any value and validate that it conforms to your semantic criteria. If it does, pass it along as-is. If it doesn’t, pass along some default value that’s still part of your type domain.</p>
+<p>Not at all coincidentally, this is how a <code>mold</code> works in Hoon, as a type constructor function.</p>
+<h3 id="atoms">Atoms</h3>
+<p>As a thin layer over Nock, Hoon continues to use the <code>noun</code> as its one way of representing a value. This certainly makes the type-constructor-as-function thing quite a bit easier, since the possible values we might want types for are numbers and binary trees of numbers.</p>
+<p>Hoon adds a few additional bits of decoration and functionality to make everyone’s life easier.</p>
+<p>In Nock, we represented all data contents as unsigned integers, which we said was pretty useless but we’d deal with it in the future. Well, the future is now.</p>
+<p>So, an arbitrary-length unsigned integer is basically a collection of bytes. So really, anything that can be represented as bytes can be an atom:</p>
+<ul>
+<li>Signed ints</li>
+<li>Unsigned ints</li>
+<li>Floats</li>
+<li>Strings</li>
+<li>Bitcoin wallet</li>
+<li>Animated gifs</li>
+<li>The genome for the naked molerat</li>
+<li>A cracked copy of Duke Nukem II</li>
+</ul>
+<p>If we know what our atom represents, we can assign a soft type, or an <code>aura</code> to it. All but the last three on this list are valid atoms, by the way, including the bitcoin wallet.</p>
+<p>Auras specialize to the right:</p>
+<pre><code>@ =&gt; any atom
+@t =&gt; UTF-8 text (a `cord`)
+@ta =&gt; ASCII text
+@tas =&gt; ASCII text symbol (lowercase letters and digits only)</code></pre>
+<p>Auras are truly soft types. Underneath it all, they’re still just integers, and you can convert any aura to any other aura, if you first convert it to <code>@</code>.</p>
+<pre><code>@c    UTF-32                   ~-foobar
+@da   128-bit absolute date    ~2016.4.23..20.09.26..f27b..dead..beef..babe
+                               ~2016.4.23
+@dr   128-bit relative date    ~s17          (17 seconds)
+                               ~m20          (20 minutes)
+                               ~d42          (42 days)
+@f    loobean                  &amp;             (0, yes)
+                               |             (1, no)
+@p                             ~zod          (0)
+@rs   32-bit IEEE float        .3.14         (pi)
+                               .-3.14        (negative pi)
+@sd   signed decimal           --2           (2)
+                               -5            (-5)
+@ub   unsigned binary          0b10          (2)
+@uc   bitcoin address          0c1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa
+@ud   unsigned decimal         42            (42)
+                               1.420         (1420)
+@ux   unsigned hexadecimal     0xcafe.babe</code></pre>
+<p><em>A non-exhaustive list of auras and their associated literals.</em></p>
+<p>The syntax for our data literals is a bit complicated for two reasons: 1. They’re designed to be URL-safe 2. They all have different parse rules</p>
+<p>This is an example of the tradeoff between syntax and semantics. Once you know the rules for what a float looks like — <code>=/  pi .3.14159</code> — our understanding of what kind of this number this is is exactly the same as the compiler’s.</p>
+<p>One <code>aura</code> that is unique to Urbit is <code>@p</code>, which is the phonemic base. This is a pronounceable, base-256 representation:</p>
+<pre><code>~leb =&gt; 145
+~samtul =&gt; 1066</code></pre>
+<p>So, let’s take these auras for a spin.</p>
+<pre><code>&gt; (add 70 4)
+74
+&gt; ? (add 70 4)
+  @
+74</code></pre>
+<p>If we use <code>wut</code>, we can get the return type for this function, which is <code>@</code> or “any atom”.</p>
+<pre><code>&gt; ^-  @t  (add 70 4)
+&#39;J&#39;
+&gt; ^-  @  &#39;J&#39;
+74</code></pre>
+<p>We can use <code>^-</code> or <code>kethep</code> to cast the return value to <code>@t</code> or “text”. We can also go the other direction and cast ‘J’ back into a generic atom.</p>
+<pre><code>&gt; ^-  @t  74
+ /~ribben-donnyl/home/~2018.5.27..17.31.49..d55f/sys/vane/ford:&lt;[1.290 24].[1.290 52]&gt;
+ nest-fail
+ \/ford: build failed ~[/g/~ribben-donnyl/use/dojo/~ribben-donnyl/inn/hand
+ /g/~ribben-donnyl/use/hood/~ribben-donnyl/out/dojo/drum/phat/~mall\/
+   et-rilmul/dojo /d //term/1]
+   \/ 
+&gt; ? 74
+ @ud
+74</code></pre>
+<p>If we try to cast 74 directly to text, we get a nest-fail. When we call <code>wut</code> to see what our type is, it’s <code>@ud</code>, an unsigned decimal.</p>
+<p>So you can make auras more specific or less specific, but you can’t alter their type directly. You can’t convert from the “unsigned” type <code>@u</code> to the “text” type <code>@t</code>.</p>
+<pre><code>&gt; `@t``@`74
+&#39;J&#39;</code></pre>
+<p>The shorthand for casting is to use <code>tec</code>s, i.e. backticks. We can do this conversion if we cast the <code>@ud</code> to <code>@</code> or “any atom” first, and then cast to <code>@t</code>.</p>
+<pre><code>&gt; `@p``@`.127.0.0.1
+~bidpur-hidpex</code></pre>
+<p>Here’s our phonemic base in action. All the addresses for personal IDs in Urbit are the size of an IP address.</p>
+<p>Here’s my personal ship cast to an IP address:</p>
+<pre><code>&gt; `@if`~ribben-donnyl
+.33.165.1.0</code></pre>
+<p><code>@if</code> is “IP v4 address”. I think the pronounceable version is more memorable, but your opinion might vary.</p>
+<p>Finally, here’s a look at signed numbers.</p>
+<pre><code>&gt; `@`--51
+102
+&gt; `@`-51
+101</code></pre>
+<p>Atoms are arbitrary-length, you can’t do the usual two’s complement, since there’s no way of knowing how many bytes you’ll need. Instead, the sign bit is the lowest bit. Positive <code>n</code> is <code>n*2</code>, negative <code>n</code> is <code>n*2-1</code>.</p>
+<h3 id="faces">Faces</h3>
+<p>In Nock, we have one operation to extract data from our binary tree, which is to give it an address.</p>
+<p>1 is the address for the whole tree, 2 is the address for the left subtree, 3 is for the right subtree, etc.</p>
+<figure>
+<img src="binary-tree-slots.png" alt="Binary Tree - Slots" /><figcaption>Binary Tree - Slots</figcaption>
+</figure>
+<p>In Hoon, we can add label these nodes, which are called “surfaces” or just “faces”. To get some node or subtree out of a noun, you give it a face and Hoon performs a depth-first search and returns the first element it finds.</p>
+<p>Using these faces, you can make your noun work like an associative array, or dictionary, or hash table, or whatever your language calls them.</p>
+<figure>
+<img src="binary-tree-faces.png" alt="Binary Tree - Faces" /><figcaption>Binary Tree - Faces</figcaption>
+</figure>
+<p>There is no symbol table in Hoon. Just a depth-first search.</p>
+<h3 id="unions">Unions</h3>
+<p>Hoon has the equivalent of the <code>Either</code> type, only better! You are not limited to a <code>Left</code> and <code>Right</code>. You can declare a type that is a union of an arbitrary number of other types.</p>
+<p>One of these union types is <code>unit</code>, which works like a <code>Maybe</code>, or an <code>Option</code>, or a <code>Possibly</code>.</p>
+<p>This has two acceptable values, either the null value, <code>$~</code>, which means <code>Nothing</code>, or <code>None</code>. Then there’s <code>[~ a]</code>, which means either <code>Just a</code> or <code>Some a</code>.</p>
+<p>And in case anyone is wondering, the Hoon standard library supplies the axiomatic Monadic functions, <code>bind</code> and <code>just</code>, which Haskell calls <code>return</code>.</p>
+<h3 id="typechecking">Typechecking</h3>
+<p>In Urbit, typechecking is called <code>nest</code>-ing. So, a type is a set of values. And a type check verifies that this type’s set of values “nests” inside some other type’s set of values? Is it a subset?</p>
+<p>Say we want a type to represent a dog. I mentioned we can use faces and make an associative array. So let’s do that.</p>
+<pre><code>&gt; =dog {name/@t color/@ta date-of-birth/@da}</code></pre>
+<p>Urbit comes with a built-in Hoon REPL. It’s got some non-standard features, like this <code>=dog</code>, which creates a variable called <code>dog</code>. And <code>dog</code> is a type, with three labeled attributes, a <code>name</code>, which is any UTF-8 text, a <code>color</code>, which is limited to ASCII, and date of birth, which is an absolute date.</p>
+<pre><code>&gt; =bruno [name=&#39;Bruno🐶&#39; color=&#39;faun&#39; date-of-birth=~2016.12.10]
+&gt; ? bruno
+  {name/@t color/@t date-of-birth/@da}
+[name=&#39;Bruno🐶&#39; color=&#39;faun&#39; date-of-birth=~2016.12.10]</code></pre>
+<p>We make another variable called <code>bruno</code>.</p>
+<p>Using the <code>?</code> or <code>wut</code> here, we can verify Bruno’s type. We didn’t declare Bruno with any reference to our <code>dog</code> type, but he’s got the same tree “shape”, faces, and compatible auras.</p>
+<pre><code>&gt; ?? bruno
+
+  [ %cell
+    [%face [~ %name] [%atom %t ~]]
+    [ %cell
+      [%face [~ %color] [%atom %ta ~]]
+      [%face [~ %date-of-birth] [%atom %da ~]]
+    ]
+  ]
+[name=&#39;Bruno🐶&#39; color=~.faun date-of-birth=~2016.12.10]</code></pre>
+<p>We can all do a <code>wutwut</code>, to see Bruno’s uncensored type, its type as a noun.</p>
+<p>Internally, this type is composed of several subtypes, for cells, faces, atoms, etc.</p>
+<pre><code>&gt; `dog`bruno
+[name=&#39;Bruno🐶&#39; color=~.faun age=~2016.12.10]</code></pre>
+<p>We attempt to cast bruno as a dog. Bruno is, in fact, a valid dog.</p>
+<p>Let’s make another dog, called <code>rex</code>, with a completely invalid date of birth.</p>
+<pre><code>&gt; =rex [name=&#39;rex&#39; color=&#39;hairless&#39; dob=42]
+&gt; `dog`rex
+
+/~ribben-donnyl/home/~2018.5.27..17.31.49..d55f/sys/vane/ford
+  &lt;[1.290 24].[1.290 52]&gt;
+nest-fail
+\/ford: build failed ~[/g/~ribben-donnyl/use/dojo/~ribben-donnyl/inn/hand /g/\/
+  ~ribben-donnyl/use/hood/~ribben-donnyl/out/dojo/drum/phat/~ribben-donnyl/do
+  jo /d //term/1]
+\/</code></pre>
+<p>When we try to cast <code>rex</code> as a dog, we get a <code>nest-fail</code>. <code>rex</code> is a bad dog.</p>
+<p>I mentioned that molds are functions. You can actually call them and provide them with a sample. If the sample is of the correct type, it will return the sample. If it isn’t, it will return a default value.</p>
+<p>You don’t usually do this directly. Usually the compiler takes care of types for you. But you can if you want to validate untrusted network traffic, for instance.</p>
+<p>So let’s say we have a service that accepts a dog as input.</p>
+<pre><code>&gt; (dog bruno)
+[name=&#39;Bruno🐶&#39; color=~.faun date-of-birth=~2016.12.10]</code></pre>
+<p>We call <code>dog</code> with <code>bruno</code>, and we get back <code>bruno</code>.</p>
+<pre><code>&gt; (dog 17)
+[name=&#39;&#39; color=~. date-of-birth=~292277024401-.1.1]</code></pre>
+<p>We call <code>dog</code> with a silly value, we get back a dog with all its values filled with defaults.</p>
+<p>So the mold doesn’t necessarily give you back the value that was sent over the wire. But it doesn’t give you something malformed or malicious either.</p>
+<pre><code>&gt; (dog rex)
+[ name=&#39;rex&#39;
+  color=~.hairless
+  age=~292277024401-.1.1..00.00.00..0000.0000.0000.002a
+]</code></pre>
+<p>If we call it with <code>rex</code>, it returns a valid <code>dog</code> and it converts <code>rex</code>’s weird date of birth to a valid absolute date.</p>
+<p>Since nouns in Hoon are atoms, trees, and node labels, for the developer, figuring out the “type” of a value is often a matter of pattern matching. In Hoon this uses the <code>?=</code> or <code>wuttis</code> rune.</p>
+<pre><code>&gt; ?=({color/@ *} bruno)
+%.y</code></pre>
+<p>In this instance, we’re just asking if <code>bruno</code>’s type has a node labeled <code>color</code>, which contains an atom. The <code>*</code> means “any noun” so we want <code>bruno</code> to have any other value to pattern match.</p>
+<p>And <code>%.y</code> means this matches.</p>
+<pre><code>&gt; ?=({color/* @ @ @} bruno)
+%.n</code></pre>
+<p>If we asked if <code>bruno</code> has color and three more nodes, this fails.</p>
+<p>Let’s make a <code>cat</code> type.</p>
+<pre><code>&gt; =cat {color/@ta date-of-birth/@da}</code></pre>
+<p>Unlike the <code>dog</code>, it’s got two values, a color and a date of birth. (It has no name, because it’s not like if you call its name, a cat is going to come to you.)</p>
+<pre><code>&gt; =pet $?(dog cat)</code></pre>
+<p>Now using <code>$?</code>, or <code>buckwut</code>, we make a union type, a <code>pet</code>, which is either a <code>cat</code> or a <code>dog</code>.</p>
+<pre><code>&gt; `pet`bruno
+[name=&#39;Bruno🐶&#39; color=~.faun date-of-birth=~2016.12.10]</code></pre>
+<p>Then we try to cast <code>bruno</code> as a <code>pet</code> and it works.</p>
+<h3 id="cores">Cores</h3>
+<p>I’ve thrown out the word “function” many times, as you’d expect for a conference on functional programming. However, the details are a bit more complicated than you might assume from the term “function”.</p>
+<p>Functions in Hoon appears inside a <code>core</code>, which is a cell with two parts: the code and the data. The code takes the form of a list of compiled attributes, called <code>arm</code>s.</p>
+<p>A <code>gate</code> is a special case, being a core with one nameless arm, i.e. a lambda.</p>
+<p>This is a recurring pattern in Hoon. If you can make one of something, you can also make a whole list of something, and the one-of-something is a special case.</p>
+<p>Cores serve the same function as objects in most other languages, since they contain both methods and data.</p>
+<p>(Side note: “Nameless Arm” would make a pretty good album name)</p>
+<h2 id="mint">Mint</h2>
+<p>Types are only really important within the context of a function. What sorts of values can this function handle as input, and what sort of values is it going to return?</p>
+<p>In Hoon, you do not declare a type. They’re only inferred by the compiler. You pass code to the compiler and it returns a pair of a type and Nock code.</p>
+<p>Type inference in Hoon only happens forwards, not backwards. Which means the compiler will determine the return value of a function, but won’t figure out the types of the function arguments.</p>
+<p>This means that, since you can’t rely on the compiler to figure out all your types, you have to annotate them. Although this arguably makes your code more readable.</p>
+<p>Sometimes, you might choose to annotate where it isn’t technically needed. Looking at our Fibonacci program from above:</p>
+<pre><code>|=  n/@ud                       :: 1
+^-  (list @ud)                  :: 2
+=/  a  0                        :: 3
+=/  b  1                        :: 4
+|-                              :: 5
+:-                              :: 6
+  a                             :: 7
+?:  =(0 n)                      :: 8
+  ~                             :: 9
+$(n (dec n), a b, b (add a b))  :: 10</code></pre>
+<p>On line 2, we cast the results of everything that follows to a list of unsigned decimals. Since this is the first line in this function, this will end up the inferred type for this whole program.</p>
+<p>This does a few things:</p>
+<ol type="1">
+<li>It documents exactly what we’re trying to do here.<br />
+</li>
+<li>If this isn’t giving us the type we think it should, we’ll get a type error, a <code>nest-fail</code>, right there at line 2, rather than somewhere else in the app.</li>
+</ol>
+<p>This applies to pretty much any language. Just because the compiler will infer what you’re doing, unless you’re doing something explicitly generic, it won’t kill you to type out what you’re expecting and can save you some trouble.</p>
+<p>As it happens, if you leave out the cast, the inferred type is almost a list of unsigned decimals… but not exactly. The compiler tends to err toward being too generic and it can drop information you might be expecting.</p>
+<p>You can end up with really subtle bugs if you just let the compiler do all the work for you.</p>
+<p>So here’s a function to make a tuple, an arbitrary-length list:</p>
+<pre><code>&gt; :+(42 420 %gocards)
+[42 420 %gocards]</code></pre>
+<p>We can call the parser from the command line:</p>
+<pre><code>&gt; =parsed (ream &#39;:+(42 420 %gocards)&#39;)
+&gt; parsed
+[%clls p=[%sand p=%ud q=42] q=[%sand p=%ud q=420] r=[%rock p=%tas q=32.480.064.744.681.319]]</code></pre>
+<p>Then we can pass this parsed expression to the compiler:</p>
+<pre><code>&gt; (~(mint ut %noun) %noun parsed)
+[#t/{@ud @ud $gocards} q=[%1 p=[42 420 32.480.064.744.681.319]]]</code></pre>
+<p>The <code>q</code> is our compiled Nock code. And the <code>#t</code> is our type, which says, as we were expecting, it’s a tuple with two unsigned integers and a constant, gocards.</p>
+<p>(Go Cards!)</p>
+<h3 id="polymorphism">Polymorphism</h3>
+<p>We don’t want to have to write a different function for every type if we don’t have to, and we don’t have to in Hoon through the magic of polymorphism.</p>
+<p>What we’ve been describing is, in Hoon terms, “dry polymorphism”, or “variance”. This uses Liskov substitution, which is the same type checking we were using above when we were talking about auras and dogs.</p>
+<p>However, we’re leaving a whole lot of tasty functional goodness if we don’t talk about the other sort of polymorphism, “wet polymorphism” or “genericity”.</p>
+<p>When we use wet gates, our code is compiled, but we defer doing our full type inference until we actually use the function. Then we infer the type based on the inputs we are given. So the function acts something like a macro.</p>
+<p>So, here’s a very simple function that will work for pedagogic purposes.</p>
+<pre><code>|=  p/(list *)  :: 1
+|-              :: 2
+?~  p           :: 3
+  ~             :: 4
+:-  i=i.p       :: 5
+t=$(p t.p)      :: 6</code></pre>
+<p>This program accepts a list and recursively rebuilds the same list.</p>
+<pre><code>&gt; `(list *)`(limo ~[1 2 3])
+~[1 2 3]</code></pre>
+<p><code>limo</code> will take a null-terminated tuple and make a <code>list</code> out of it.</p>
+<pre><code>&gt; +rebuild (limo ~[1 2 3])                                           
+~[1 2 3]</code></pre>
+<p>So far so good. Now, what if we use a <code>tape</code>, which is a string represented as a list of characters?</p>
+<pre><code>&gt; +rebuild &quot;tape&quot;
+~[116 97 112 101]</code></pre>
+<p>This is not what we wanted!</p>
+<p>The problem is, when this compiled as a dry gate, it set the type of the <code>list</code> to <code>*</code>, which is “any noun”. Then when we call it, it casts the characters in our string to their raw ints and that’s what we build a list out of.</p>
+<pre><code>|*  p/(list)    :: 1</code></pre>
+<p>So we change our <code>|=</code>, which makes a dry gate, to a <code>|*</code>, which makes a wet gate.</p>
+<pre><code>&gt; +rebuild &quot;tape&quot; 
+&quot;tape&quot;</code></pre>
+<p>And when we run it, we get our string back.</p>
+<p>The standard library uses wet gates for things like folds, maps, and the sorts of things you might use a typeclass for in Haskell.</p>
+<h2 id="and-thats-all-for-now">And That’s All for Now</h2>
+<p>At this point, I would dearly love to launch into a discussion on how cores work, some of the more interesting details on type inference, and the menu of options for polymorphism open to you. It’s got a much more extensive menu of options so much more than wet vs. dry.</p>
+<p>However, that’s all we have time for. However, I will be happy to discuss cores, type inference, and polymorphism with everyone at LambdaConf 2019.</p>
+<h2 id="conclusions">Conclusions</h2>
+<p>So, here’s what I’m hoping everyone takes away from this, even if they never look at anything Urbit-related ever again:</p>
+<ul>
+<li><p>The amazing possibility of computing based on nothing but unsigned integers, binary trees, and increment.</p></li>
+<li><p>ASCII Pronunciation</p></li>
+</ul>
+<p>Give it a try! You’ll find coding to be a different experience when you can subvocalize what you’re typing out.</p>
+<ul>
+<li>Kelvin Versioning</li>
+</ul>
+<p>I think Kelvin versioning would work well with a REST endpoint that’s under development. You might have some other developers who are also developing a client to consume your data, and giving your return value a Kelvin version lets them know how close you are to being “done” and if something has changed.</p>
+<ul>
+<li>LeBlanc’s Triangle</li>
+</ul>
+<figure>
+<img src="leblancs-triangle.png" alt="LeBlanc’s Triangle" /><figcaption>LeBlanc’s Triangle</figcaption>
+</figure>
+<p>I’m serious about that one. Spread the word on that. Work it into conversation with your friends and in-laws. Don’t forget to call it “LeBlanc’s Triangle”.</p>
+<p>If that takes off, you can be a total hipster about it and say, “Yeah, I was there at the conference when the eponymous LeBlanc introduced it.”</p>
+<p>Really, everyone’s a winner on that.</p>
+<p>And finally, to quote the Urbit whitepaper:</p>
+<blockquote>
+<p><em>“Urbit is cool and you should check it out.”</em></p>
+</blockquote>
+<p>This is a good time for that. After this latest version of Hoon, development is being transitioned out of “auteur” mode and handed over to the developer community.</p>
+<p>Hoon makes no use of category theory. Should it? What are we missing without it? Get involved and make the system better.</p>
+<h2 id="some-links">Some Links</h2>
+<p><a href="https://urbit.org/docs/using/install/">Install Urbit</a> and have a look.</p>
+<p>Then <a href="https://urbit.org/stream/">check out the stream</a>. You can chat with people, possibly myself, and pepper everyone with questions.</p>
+<p>If you see <code>~ribben-donnyl</code> on there, that’s me. Say hello!</p>
+<p>Also, you might have seen me walking around with a variety of cool Urbit shirts. <a href="http://urbit.threadless.com">They’re available for purchase.</a></p>
+<h2 id="acknowledgments">Acknowledgments</h2>
+<ul>
+<li>Ted, Mark, and everyone at Tlon</li>
+<li>Josh Reagan at Rice</li>
+<li>WWT Asynchrony Labs - <a href="https://www2.wwt.com/careers/">We’re hiring</a>! Openings in St. Louis and Denver.</li>
+</ul>
