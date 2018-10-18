@@ -920,3 +920,5 @@ Also, you might have seen me walking around with a variety of cool Urbit shirts.
 - Ted, Mark, and everyone at Tlon
 - Josh Reagan at Rice
 - WWT Asynchrony Labs - [We're hiring](https://www2.wwt.com/careers/)!  Openings in St. Louis and Denver.
+
+{% endraw %}
