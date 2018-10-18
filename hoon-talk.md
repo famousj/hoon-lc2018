@@ -1,6 +1,6 @@
 # Hoon and You - An FP Perspective
 
-[//]: # (Version 26K)
+[//]: # (Version 25K {% raw %})
 
 ## Introduction
 
